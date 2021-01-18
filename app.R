@@ -28,8 +28,15 @@ ui <- fluidPage(# Application title
             selectInput(
                 "estimator", 
                 "Estimator:",
-                c("Unveiled Jackknife" = "UnveilJ",
-                  "Chao-Jost" = "ChaoJost")
+                c(
+                    "Chao-Jost" = "ChaoJost",
+                    "Chao-Shen" = "ChaoShen",
+                    "Generalized Coverage" = "GenCov",
+                    "Unveiled Chao1" = "UnveilC",
+                    "Unveiled Improved Chao1" = "UnveiliC",
+                    "Unveiled Jackknife" = "UnveilJ"
+                ),
+                selected = "UnveilJ"
             ),
             sliderInput(
                 "samplesize",
@@ -103,6 +110,7 @@ server <- function(input, output) {
                 ProfileAsaList <- parallel::mclapply(q.seq, function(q) 
                     Diversity(MCSim$Nsi[, i], q, Correction=input$estimator, CheckArguments=FALSE), mc.allow.recursive=FALSE)
                 Sims[i, ] <- simplify2array(ProfileAsaList)
+                setProgress(i)
             }
             Means <- apply(Sims, 2, mean)
             Vars <- apply(Sims, 2, var)
