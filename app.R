@@ -16,7 +16,7 @@ ui <- fluidPage(# Application title
                 ),
             conditionalPanel(
                 condition = "input.distribution == 'geom'",
-                numericInput("prob ", "Ressource Share:", 0.1, min = 0, max = 1, step=0.1)
+                numericInput("prob", "Ressource Share:", 0.1, min = 0, max = 1, step=0.1)
                 ),
             sliderInput(
                 "richness",
@@ -73,9 +73,11 @@ server <- function(input, output) {
     observeEvent(input$run, {
         # Create the community
         Community <- rCommunity(1,                               
-                                size=1E6,
+                                size=.Machine$integer.max,
                                 S=input$richness,
                                 Distribution=input$distribution,
+                                sd=input$sd,
+                                prob=input$prob,
                                 CheckArguments = FALSE
                                 )
         RAC(Community)
@@ -87,15 +89,20 @@ server <- function(input, output) {
         # Compute the profile
         withProgress({
             # Estimated profile
-            Values <- vapply(q.seq, function(q) Diversity(Ps, q, CheckArguments = FALSE), 0)
+            Values <- vapply(q.seq, function(q) Diversity(Ps, q, Correction=input$estimator, CheckArguments = FALSE), 0)
             # Create a MetaCommunity made of simulated communities
-            MCSim <- rCommunity(input$nsimulations, size=input$samplesize, NorP=Ps, CheckArguments = FALSE)
+            MCSim <- rCommunity(input$nsimulations, 
+                                size=input$samplesize, 
+                                NorP=Ps, 
+                                sd=input$sd,
+                                prob=input$prob,
+                                CheckArguments = FALSE)
             Sims <- matrix(nrow=input$nsimulations, ncol=length(q.seq))
             for (i in 1:input$nsimulations) {
                 # Parallelize. Do not allow more forks in PhyloApply()
-                ProfileAsaList <- parallel::mclapply(q.seq, function(q) Diversity(MCSim$Nsi[, i], q, CheckArguments=FALSE), mc.allow.recursive=FALSE)
+                ProfileAsaList <- parallel::mclapply(q.seq, function(q) 
+                    Diversity(MCSim$Nsi[, i], q, Correction=input$estimator, CheckArguments=FALSE), mc.allow.recursive=FALSE)
                 Sims[i, ] <- simplify2array(ProfileAsaList)
-                setProgress(i)
             }
             Means <- apply(Sims, 2, mean)
             Vars <- apply(Sims, 2, var)
