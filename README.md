@@ -1,5 +1,7 @@
 # Estimation of Diversity
 
+![stability-wip](https://img.shields.io/badge/lifecycle-maturing-blue.svg)
+
 A shiny application to assess the efficiency of diversity estimators applied to undersampled communities.
 
 The theory is detailed in the paper [*Practical Estimation of Diversity from Abundance Data*](https://hal-agroparistech.archives-ouvertes.fr/hal-01212435).
@@ -22,4 +24,3 @@ The output plots are:
 - The rank-abundance curve (Whittaker plot) of the community species.
 - The actual and estimated diversity profiles.
 - The root mean squared error of the estimation.
-
