@@ -139,18 +139,31 @@ server <- function(input, output) {
     # Output ####
     output$profile <- renderPlot({
         if (inherits(Profile(), what="CommunityProfile"))
-            autoplot(Profile())
+            autoplot(Profile()) +
+            labs(
+                title = "Estimated vs Actual Diversity Profile",
+                caption = paste("Actual diversity profile of the comunity (solid line) and estimated diversity (confidence envelope at the",
+                    input$alpha, "risk level).
+                    The dotted line is the average estimation accross", input$nsimulations, "simulations"))
+        
     })
     output$rmse <- renderPlot({
         if (inherits(Profile(), what="CommunityProfile")) {
             rmse <- RMSE()
             ggplot(rmse) +
-                geom_line(aes(x=q, y=RMSE))
+                geom_line(aes(x=q, y=RMSE)) +
+                labs(
+                    title = "Normalized Root-Mean-Square Deviation",
+                    caption = "RMSE normalized by the average value (accross simulations) of the estimator.")
         }
     })
     output$rac <- renderPlot({
         if (inherits(Profile(), what="CommunityProfile")) {
-            autoplot(RAC(), Distribution=input$distribution)
+            autoplot(RAC(), Distribution=input$distribution) +
+                labs(
+                    title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
+                    caption = "Species are ranked from the most abundant to the rarest. The abundance axis is in log-scale.
+                               The red curve is the best fit of the theoretical distribution.")
         }
     })
 }
