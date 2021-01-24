@@ -16,7 +16,7 @@ ui <- fluidPage(# Application title
                 ),
             conditionalPanel(
                 condition = "input.distribution == 'geom'",
-                numericInput("prob", "Ressource Share:", 0.1, min = 0, max = 1, step=0.1)
+                numericInput("prob", "Ressource Share:", 0.01, min = 0, max = 1, step=0.1)
                 ),
             sliderInput(
                 "richness",
@@ -63,7 +63,30 @@ ui <- fluidPage(# Application title
             tabsetPanel(
                 tabPanel("Diversity", plotOutput("profile")), 
                 tabPanel("RMSE", plotOutput("rmse")), 
-                tabPanel("RAC", plotOutput("rac"))
+                tabPanel("RAC", plotOutput("rac")),
+                tabPanel("Help",
+                         p(),
+                         p("This Shiny app is designed to test the efficiency of various diversity estimators applied to undersampled communities",
+                         a(href="https://hal-agroparistech.archives-ouvertes.fr/hal-01212435v2/document", "(Marcon, 2015)"),
+                         "."),
+                         p("It generates a community from a well-known distribution, simulates sampling and estimates diversity from the samples.",
+                           "The estimated diversity is compared to the actual one."),
+                         h2("Generate a community"),
+                         p("Choose the distribution and its parameters, including the number of species.", 
+                           "A community of the largest size allowed by R, i.e.",
+                           code(".Machine$integer.max"),
+                           "individuals, is created."),
+                         p("Its Rank-Abundance Curve, aka a Whittaker plot, is displayed in the RAC tab of the app."),
+                         h2("Sample it"),
+                         p("Choose the sample size and the number of simulations.",
+                           "10 simulations are enough for a quick view of the estimation.",
+                           "Run 1000 simulations for accurate statistics."),
+                         h2("Estimate"),
+                         p("Choose the estimator of diversity."),
+                         p("It is applied to each sample to obtain a distribution of estimations."),
+                         p("The confidence envelope of diversity profiles compared to the diversity of the actual community is in the Diversity tab."),
+                         p("The Root-Mean-Square Deviation normalized by the average estimated diversity is in the RMSE tab."),
+                )
             )
         )
     ))
