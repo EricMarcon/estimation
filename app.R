@@ -86,6 +86,12 @@ ui <- fluidPage(# Application title
                          p("It is applied to each sample to obtain a distribution of estimations."),
                          p("The confidence envelope of diversity profiles compared to the diversity of the actual community is in the Diversity tab."),
                          p("The Root-Mean-Square Deviation normalized by the average estimated diversity is in the RMSE tab."),
+                         tags$a(
+                             href="https://ericmarcon.github.io/entropart/", 
+                             tags$img(src="entropart.png", 
+                                      title="Made with the entropart package",
+                                      style="display: block; margin-left: auto; margin-right: auto;")
+                         )
                 )
             )
         )
