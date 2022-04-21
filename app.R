@@ -12,6 +12,7 @@ ui <- fluidPage(
                 c(
                     "Lognormal" = "lnorm",
                     "Geometric" = "geom",
+                    "Log-series" = "lseries",
                     "Broken Stick" = "bstick"
                 )
             ),
@@ -29,6 +30,10 @@ ui <- fluidPage(
                     max = 0.5,
                     step = 0.01
                 )
+            ),
+            conditionalPanel(
+              condition = "input.distribution == 'lseries'",
+              numericInput("Falpha", "Fisher(s alpha:", 40, min = 1)
             ),
             sliderInput(
                 "richness",
@@ -142,8 +147,10 @@ server <- function(input, output) {
         # Create the community
         if (input$distribution %in% c("lnorm", "geom"))
             Size <- .Machine$integer.max
-        if (input$distribution == "bstick")
-            Size <- 2^30L
+        if (input$distribution  %in% c("bstick"))
+          Size <- .Machine$integer.max %/% 2
+        if (input$distribution  %in% c("lseries"))
+          Size <- .Machine$integer.max %/% 2^6
         Community <- rCommunity(
             1,
             size = Size,
@@ -151,14 +158,14 @@ server <- function(input, output) {
             Distribution = input$distribution,
             sd = input$sd,
             prob = input$prob,
-            alpha = input$alpha,
+            alpha = input$Falpha,
             CheckArguments = FALSE
         )
         RAC(Community)
         Ps <- as.ProbaVector(Community)
         # Real profile
         q.seq <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
-        Alpha <- input$alpha
+        alpha <- input$alpha
         
         # Compute the profile
         withProgress({
@@ -201,7 +208,7 @@ server <- function(input, output) {
                 apply(Sims,
                       2,
                       stats::quantile,
-                      probs = c(Alpha / 2, 1 - Alpha / 2))
+                      probs = c(alpha / 2, 1 - alpha / 2))
             colnames(EstEnvelope) <- q.seq
             cprofile <- list(
                 x = q.seq,
