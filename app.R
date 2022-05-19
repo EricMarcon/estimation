@@ -87,6 +87,7 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("Diversity", plotOutput("profile")),
         tabPanel("RMSE", plotOutput("rmse")),
+        tabPanel("Coverage", plotOutput("C")),
         tabPanel("RAC", plotOutput("rac")),
         tabPanel(
           "Help",
@@ -125,6 +126,9 @@ ui <- fluidPage(
           p(
             "The Root-Mean-Square Deviation normalized by the average estimated diversity is in the RMSE tab."
           ),
+          p(
+            "The estimated and actual sample coverage of each simulated sample are in the Coverage tab."
+          ),
           tags$a(
             href = "https://ericmarcon.github.io/entropart/",
             tags$img(
@@ -145,6 +149,7 @@ server <- function(input, output) {
   RAC <- reactiveVal()
   Profile <- reactiveVal()
   RMSE <- reactiveVal()
+  Sims_C <- reactiveVal()
 
   ## Action launched by the button ####
   observeEvent(
@@ -174,81 +179,100 @@ server <- function(input, output) {
       alpha <- input$alpha
         
       # Compute the profile
-      withProgress(
-        {
-          # Estimated profile
-          Values <- vapply(
+      withProgress({
+        # Estimated profile
+        Values <- vapply(
+          q.seq, 
+          function(q) 
+            Diversity(
+              Ps,
+              q,
+              Correction = input$estimator,
+              CheckArguments = FALSE
+            ),
+          0)
+        
+        # Create a MetaCommunity made of simulated communities
+        MCSim <- rCommunity(
+          input$nsimulations,
+          size = input$samplesize,
+          NorP = Ps,
+          sd = input$sd,
+          prob = input$prob,
+          CheckArguments = FALSE
+        )
+        
+        # Sample coverages of simulated communities: real and estimated
+        Sims_C_real <- apply(
+          MCSim$Nsi, 
+          2,
+          function(community)
+            sum(Ps[community>0])
+          )
+        Sims_C_est <- apply(MCSim$Nsi, 2, Coverage, CheckArguments=FALSE)
+        sims_c <- tibble(
+          Actual = Sims_C_real,
+          Estimated = Sims_C_est
+          )
+        # Save the values
+        Sims_C(sims_c)
+        
+        # Prepare a matrix for simulation results
+        Sims <- matrix(
+          nrow = input$nsimulations,
+          ncol = length(q.seq)
+          )
+        
+        # Run the simulations
+        for (i in 1:input$nsimulations) {
+          # Parallelize. Do not allow more forks in PhyloApply()
+          ProfileAsaList <- parallel::mclapply(
             q.seq, 
-            function(q) 
+            function(q)
               Diversity(
-                Ps,
+                MCSim$Nsi[, i],
                 q,
                 Correction = input$estimator,
                 CheckArguments = FALSE
-                ),
-            0)
-          # Create a MetaCommunity made of simulated communities
-          MCSim <- rCommunity(
-            input$nsimulations,
-            size = input$samplesize,
-            NorP = Ps,
-            sd = input$sd,
-            prob = input$prob,
-            CheckArguments = FALSE
-            )
-          Sims <- matrix(
-            nrow = input$nsimulations,
-            ncol = length(q.seq)
-            )
-          for (i in 1:input$nsimulations) {
-            # Parallelize. Do not allow more forks in PhyloApply()
-            ProfileAsaList <- parallel::mclapply(
-              q.seq, 
-              function(q)
-                Diversity(
-                  MCSim$Nsi[, i],
-                  q,
-                  Correction = input$estimator,
-                  CheckArguments = FALSE
-                  ),
-              mc.allow.recursive = FALSE)
-            Sims[i, ] <- simplify2array(ProfileAsaList)
-            setProgress(i)
-            }
-          Means <- apply(Sims, 2, mean)
-          Vars <- apply(Sims, 2, var)
-          # Quantiles of simulations for each q
-          EstEnvelope <- apply(
-            Sims,
-            2,
-            stats::quantile,
-            probs = c(alpha / 2, 1 - alpha / 2)
-            )
-          colnames(EstEnvelope) <- q.seq
-          cprofile <- list(
-            x = q.seq,
-            y = Values,
-            low = EstEnvelope[1, ],
-            high = EstEnvelope[2, ],
-            mid = Means,
-            var = Vars
-            )
-          class(cprofile) <- "CommunityProfile"
-          },
-        min = 0,
-        max = input$nsimulations,
-        message = "Running Simulations"
-        )
+              ),
+            mc.allow.recursive = FALSE)
+          Sims[i, ] <- simplify2array(ProfileAsaList)
+          setProgress(i)
+        }
+        
+        Means <- apply(Sims, 2, mean)
+        Vars <- apply(Sims, 2, var)
+        # Quantiles of simulations for each q
+        EstEnvelope <- apply(
+          Sims,
+          2,
+          stats::quantile,
+          probs = c(alpha / 2, 1 - alpha / 2)
+          )
+        colnames(EstEnvelope) <- q.seq
+        cprofile <- list(
+          x = q.seq,
+          y = Values,
+          low = EstEnvelope[1, ],
+          high = EstEnvelope[2, ],
+          mid = Means,
+          var = Vars
+          )
+        class(cprofile) <- "CommunityProfile"
+      },
+      min = 0,
+      max = input$nsimulations,
+      message = "Running Simulations"
+      )
       # Save the profile
       Profile(cprofile)
       # Calculate RMSE
       rmse <- tibble(
         q = q.seq,
         RMSE = sqrt((cprofile$y - cprofile$mid) ^ 2 + cprofile$var) / cprofile$y
-        )
+      )
       RMSE(rmse)
-      }
-    )
+    })
     
     # Output ####
     output$profile <- renderPlot(
@@ -260,7 +284,8 @@ server <- function(input, output) {
             caption = paste(
               "Actual diversity profile of the comunity (solid line) and estimated diversity (confidence envelope at the",
               input$alpha,
-              "risk level). The dotted line is the average estimation accross",
+              "risk level).
+              The dotted line is the average estimation accross",
               input$nsimulations,
               "simulations"
               )
@@ -278,6 +303,22 @@ server <- function(input, output) {
             )
         }
       })
+    output$C <- renderPlot({
+      if (inherits(Profile(), what = "CommunityProfile")) {
+        sims_c <- Sims_C()
+        ggplot(sims_c) + 
+          geom_point(aes(x=Actual, y=Estimated)) + 
+          geom_abline(col="red") + 
+          geom_hline(yintercept = mean(sims_c$Estimated), lty=2) + 
+          geom_vline(xintercept = mean(sims_c$Actual), lty=2) +
+          labs(
+            title = "Sample Coverage",
+            caption = "Estimated vs actual sample coverage of simulated samples.
+            The red line represents equality.
+            The dotted lines show the average estimated and actual values."
+          )
+        }
+    })
     output$rac <- renderPlot({
       if (inherits(Profile(), what = "CommunityProfile")) {
         autoplot(RAC(), Distribution = input$distribution) +
