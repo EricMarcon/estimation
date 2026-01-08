@@ -207,9 +207,9 @@ server <- function(input, output) {
           MCSim$Nsi, 
           2,
           function(community)
-            sum(Ps[community>0])
+            sum(Ps[community > 0])
           )
-        Sims_C_est <- apply(MCSim$Nsi, 2, Coverage, CheckArguments=FALSE)
+        Sims_C_est <- apply(MCSim$Nsi, 2, Coverage, CheckArguments = FALSE)
         sims_c <- tibble(
           Actual = Sims_C_real,
           Estimated = Sims_C_est
@@ -307,10 +307,10 @@ server <- function(input, output) {
       if (inherits(Profile(), what = "CommunityProfile")) {
         sims_c <- Sims_C()
         ggplot(sims_c) + 
-          geom_point(aes(x=Actual, y=Estimated)) + 
-          geom_abline(col="red") + 
-          geom_hline(yintercept = mean(sims_c$Estimated), lty=2) + 
-          geom_vline(xintercept = mean(sims_c$Actual), lty=2) +
+          geom_point(aes(x = Actual, y = Estimated)) + 
+          geom_abline(col = "red") + 
+          geom_hline(yintercept = mean(sims_c$Estimated), lty = 2) + 
+          geom_vline(xintercept = mean(sims_c$Actual), lty = 2) +
           labs(
             title = "Sample Coverage",
             caption = "Estimated vs actual sample coverage of simulated samples.
