@@ -1,86 +1,95 @@
-# UI ####
+# UI ----
 ui <- fluidPage(
   # Application title
   titlePanel("Diversity Estimation"),
   
   sidebarLayout(
-    ## Sidebar ####
+    ## Sidebar ----
     sidebarPanel(
       selectInput(
-        "distribution",
-        "Distribution:",
-        c(
+        inputId = "distribution",
+        label = "Distribution:",
+        choices = c(
           "Lognormal" = "lnorm",
           "Geometric" = "geom",
           "Log-series" = "lseries",
           "Broken Stick" = "bstick"
-          )
-        ),
+        )
+      ),
       conditionalPanel(
         condition = "input.distribution == 'lnorm'",
-        numericInput("sd", "Lognormal Standard Deviation:", 2, min = 0)
-        ),
+        numericInput(
+          inputId = "sd", 
+          label = "Lognormal Standard Deviation:", 
+          value = 2, 
+          min = 0
+        )
+      ),
       conditionalPanel(
         condition = "input.distribution == 'geom'",
         numericInput(
-          "prob",
-          "Ressource Share:",
-          0.01,
+          inputId = "prob",
+          label = "Ressource Share:",
+          value = 0.01,
           min = 0,
           max = 0.5,
           step = 0.01
-          )
-        ),
+        )
+      ),
       conditionalPanel(
         condition = "input.distribution == 'lseries'",
-        numericInput("Falpha", "Fisher(s alpha:", 40, min = 1)
-        ),
+        numericInput(
+          inputId = "Falpha",
+          label = "Fisher's alpha:", 
+          value = 40, 
+          min = 1
+        )
+      ),
       sliderInput(
-        "richness",
-        "Number of Species in the Community",
+        inputId = "richness",
+        label = "Number of Species in the Community",
         min = 2,
         max = 1000,
         value = 300
-        ),
+      ),
       selectInput(
-        "estimator",
-        "Estimator:",
-        c(
+        inputId = "estimator",
+        label = "Estimator:",
+        choices = c(
           "Chao-Jost" = "ChaoJost",
           "Chao-Shen" = "ChaoShen",
           "Generalized Coverage" = "GenCov",
           "Unveiled Chao1" = "UnveilC",
           "Unveiled Improved Chao1" = "UnveiliC",
           "Unveiled Jackknife" = "UnveilJ"
-          ),
-        selected = "UnveilJ"
         ),
+        selected = "UnveilJ"
+      ),
       sliderInput(
-        "samplesize",
-        "Sample Size",
+        inputId = "samplesize",
+        label = "Sample Size",
         min = 100,
         max = 10000,
         value = 5000
-        ),
-      actionButton("run", "Run"),
+      ),
+      actionButton(inputId = "run", label = "Run"),
       helpText("More options"),
       sliderInput(
-        "nsimulations",
-        "Number of Simulations",
+        inputId = "nsimulations",
+        label = "Number of Simulations",
         min = 2,
         max = 1000,
         value = 10
-        ),
+      ),
       numericInput(
-        "alpha",
-        "Risk level:",
-        0.05,
+        inputId = "alpha",
+        label = "Risk level:",
+        value = 0.05,
         min = 0.001,
         max = 0.5,
         step = 0.01
-        ),
-      # End of input
       ),
+    ),
     
     ## Main panel ####
     mainPanel(
