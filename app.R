@@ -91,15 +91,15 @@ ui <- fluidPage(
       ),
     ),
     
-    ## Main panel ####
+    ## Main panel ----
     mainPanel(
       tabsetPanel(
-        tabPanel("Diversity", plotOutput("profile")),
-        tabPanel("RMSE", plotOutput("rmse")),
-        tabPanel("Coverage", plotOutput("C")),
-        tabPanel("RAC", plotOutput("rac")),
+        tabPanel(title = "Diversity", plotOutput("profile")),
+        tabPanel(title = "RMSE", plotOutput("rmse")),
+        tabPanel(title = "Coverage", plotOutput("C")),
+        tabPanel(title = "RAC", plotOutput("rac")),
         tabPanel(
-          "Help",
+          title = "Help",
           p(),
           p(
             "This Shiny app is designed to test the efficiency of various diversity estimators applied to undersampled communities",
@@ -139,10 +139,10 @@ ui <- fluidPage(
             "The estimated and actual sample coverage of each simulated sample are in the Coverage tab."
           ),
           tags$a(
-            href = "https://ericmarcon.github.io/entropart/",
+            href = "https://ericmarcon.github.io/divent/",
             tags$img(
-              src = "entropart.png",
-              title = "Made with the entropart package",
+              src = "divent.png",
+              title = "Made with the divent package",
               style = "display: block; margin-left: auto; margin-right: auto;"
               )
             )
