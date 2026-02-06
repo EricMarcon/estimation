@@ -2,7 +2,7 @@
 ui <- fluidPage(
   # Application title
   titlePanel("Diversity Estimation"),
-  
+
   sidebarLayout(
     ## Sidebar ----
     sidebarPanel(
@@ -19,16 +19,16 @@ ui <- fluidPage(
       conditionalPanel(
         condition = "input.distribution == 'lnorm'",
         numericInput(
-          inputId = "sd", 
-          label = "Lognormal Standard Deviation:", 
-          value = 2, 
+          inputId = "sd_lnorm",
+          label = "Lognormal Standard Deviation:",
+          value = 2,
           min = 0
         )
       ),
       conditionalPanel(
         condition = "input.distribution == 'geom'",
         numericInput(
-          inputId = "prob",
+          inputId = "prob_geom",
           label = "Ressource Share:",
           value = 0.01,
           min = 0,
@@ -39,14 +39,14 @@ ui <- fluidPage(
       conditionalPanel(
         condition = "input.distribution == 'lseries'",
         numericInput(
-          inputId = "Falpha",
-          label = "Fisher's alpha:", 
-          value = 40, 
+          inputId = "fisher_alpha",
+          label = "Fisher's alpha:",
+          value = 40,
           min = 1
         )
       ),
       sliderInput(
-        inputId = "richness",
+        inputId = "species_number",
         label = "Number of Species in the Community",
         min = 2,
         max = 1000,
@@ -66,7 +66,7 @@ ui <- fluidPage(
         selected = "UnveilJ"
       ),
       sliderInput(
-        inputId = "samplesize",
+        inputId = "sample_size",
         label = "Sample Size",
         min = 100,
         max = 10000,
@@ -75,7 +75,7 @@ ui <- fluidPage(
       actionButton(inputId = "run", label = "Run"),
       helpText("More options"),
       sliderInput(
-        inputId = "nsimulations",
+        inputId = "n_simulations",
         label = "Number of Simulations",
         min = 2,
         max = 1000,
@@ -90,7 +90,7 @@ ui <- fluidPage(
         step = 0.01
       ),
     ),
-    
+
     ## Main panel ----
     mainPanel(
       tabsetPanel(
@@ -152,142 +152,143 @@ ui <- fluidPage(
     )
   )
 
-# Server logic ####
+# Server logic ----
 server <- function(input, output) {
-  ## Store the reactive values ####
-  RAC <- reactiveVal()
-  Profile <- reactiveVal()
-  RMSE <- reactiveVal()
-  Sims_C <- reactiveVal()
+  ## Store the reactive values ----
+  rac_reactive <- reactiveVal()
+  profile_reactive <- reactiveVal()
+  rmse_reactive <- reactiveVal()
+  coverages_compare_reactive <- reactiveVal()
 
-  ## Action launched by the button ####
+  ## Action launched by the button ----
   observeEvent(
-    input$run,
-    {
+    eventExpr = input$run,
+    handlerExpr = {
       # Create the community
       if (input$distribution %in% c("lnorm", "geom"))
-        Size <- .Machine$integer.max
-      if (input$distribution  %in% c("bstick"))
-        Size <- .Machine$integer.max %/% 2
-      if (input$distribution  %in% c("lseries"))
-        Size <- .Machine$integer.max %/% 2^6
-      Community <- rCommunity(
-        1,
-        size = Size,
-        S = input$richness,
-        Distribution = input$distribution,
-        sd = input$sd,
-        prob = input$prob,
-        alpha = input$Falpha,
-        CheckArguments = FALSE
+        the_size <- .Machine$integer.max
+      if (input$distribution %in% c("bstick"))
+        the_size <- .Machine$integer.max %/% 2
+      if (input$distribution %in% c("lseries"))
+        the_size <- .Machine$integer.max %/% 2^6
+      the_community <- rcommunity(
+        n = 1,
+        size = the_size,
+        species_number = input$species_number,
+        distribution = input$distribution,
+        sd_lnorm = input$sd_lnorm,
+        prob_geom = input$prob_geom,
+        fisher_alpha = input$fisher_alpha,
+        check_arguments = FALSE
         )
-      RAC(Community)
-      Ps <- as.ProbaVector(Community)
+      rac_reactive(the_community)
+      prob <- as.numeric(as_probabilities(the_community))
       # Real profile
-      q.seq <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
+      orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
       alpha <- input$alpha
-        
+
       # Compute the profile
       withProgress({
         # Estimated profile
-        Values <- vapply(
-          q.seq, 
-          function(q) 
-            Diversity(
-              Ps,
-              q,
-              Correction = input$estimator,
-              CheckArguments = FALSE
-            ),
-          0)
-        
-        # Create a MetaCommunity made of simulated communities
-        MCSim <- rCommunity(
-          input$nsimulations,
-          size = input$samplesize,
-          NorP = Ps,
-          sd = input$sd,
-          prob = input$prob,
-          CheckArguments = FALSE
+        the_diversity <- vapply(
+          orders,
+          function(q) {
+            div_hill(
+              prob,
+              q = q,
+              as_numeric = TRUE,
+              check_arguments = FALSE
+            )
+          },
+          FUN.VALUE = 0
         )
-        
-        # Sample coverages of simulated communities: real and estimated
-        Sims_C_real <- apply(
-          MCSim$Nsi, 
-          2,
+
+        # Create a MetaCommunity made of simulated communities
+        the_metacommunity <- rcommunity(
+          n = input$n_simulations ,
+          size = input$sample_size,
+          prob = prob,
+          check_arguments = FALSE
+        )
+
+        # Sample coverage of simulated communities: real and estimated
+        coverages_real <- apply(
+          as.matrix(the_metacommunity),
+          MARGIN = 1,
           function(community)
-            sum(Ps[community > 0])
+            sum(prob[community > 0])
           )
-        Sims_C_est <- apply(MCSim$Nsi, 2, Coverage, CheckArguments = FALSE)
-        sims_c <- tibble(
-          Actual = Sims_C_real,
-          Estimated = Sims_C_est
+        coverages_estimated <- coverage(
+          the_metacommunity,
+          as_numeric = TRUE,
+          check_arguments = FALSE
+        )
+        coverages_compare <- tibble(
+          Actual = coverages_real,
+          Estimated = coverages_estimated
           )
         # Save the values
-        Sims_C(sims_c)
-        
-        # Prepare a matrix for simulation results
-        Sims <- matrix(
-          nrow = input$nsimulations,
-          ncol = length(q.seq)
-          )
-        
-        # Run the simulations
-        for (i in 1:input$nsimulations) {
-          # Parallelize. Do not allow more forks in PhyloApply()
-          ProfileAsaList <- parallel::mclapply(
-            q.seq, 
-            function(q)
-              Diversity(
-                MCSim$Nsi[, i],
-                q,
-                Correction = input$estimator,
-                CheckArguments = FALSE
-              ),
-            mc.allow.recursive = FALSE)
-          Sims[i, ] <- simplify2array(ProfileAsaList)
-          setProgress(i)
-        }
-        
-        Means <- apply(Sims, 2, mean)
-        Vars <- apply(Sims, 2, var)
+        coverages_compare_reactive(coverages_compare)
+
+        the_metacommunity |>
+          profile_hill(orders = orders) |>
+          pivot_wider(
+            names_from = site,
+            values_from = diversity
+          ) |>
+          select(-estimator, -order) ->
+          the_metacommunity_hill
+
+        the_metacommunity_hill_mean <- rowMeans(the_metacommunity_hill)
+        the_metacommunity_hill_var <- apply(
+          the_metacommunity_hill,
+          MARGIN = 1,
+          FUN = var
+        )
         # Quantiles of simulations for each q
-        EstEnvelope <- apply(
-          Sims,
-          2,
-          stats::quantile,
+        the_metacommunity_hill_envelope <- apply(
+          the_metacommunity_hill,
+          MARGIN = 1,
+          FUN = stats::quantile,
           probs = c(alpha / 2, 1 - alpha / 2)
           )
-        colnames(EstEnvelope) <- q.seq
-        cprofile <- list(
-          x = q.seq,
-          y = Values,
-          low = EstEnvelope[1, ],
-          high = EstEnvelope[2, ],
-          mid = Means,
-          var = Vars
-          )
-        class(cprofile) <- "CommunityProfile"
+        colnames(the_metacommunity_hill_envelope) <- orders
+
+        # Make a profile object to plot it
+        the_profile <- tibble(
+          site = "simulations",
+          order = orders,
+          diversity = the_diversity,
+          inf = the_metacommunity_hill_envelope[1, ],
+          sup = the_metacommunity_hill_envelope[2, ],
+          # Extra fields
+          mean = the_metacommunity_hill_mean,
+          var = the_metacommunity_hill_var
+        )
+        class(the_profile) <- c(
+          "profile",
+          class(the_profile)
+        )
       },
       min = 0,
-      max = input$nsimulations,
+      max = input$n_simulations,
       message = "Running Simulations"
       )
       # Save the profile
-      Profile(cprofile)
+      profile_reactive(the_profile)
       # Calculate RMSE
       rmse <- tibble(
-        q = q.seq,
-        RMSE = sqrt((cprofile$y - cprofile$mid) ^ 2 + cprofile$var) / cprofile$y
+        q = orders,
+        RMSE = sqrt((the_profile$diversity - the_profile$mean) ^ 2 + the_profile$var) / the_profile$diversity
       )
-      RMSE(rmse)
+      rmse_reactive(rmse)
     })
-    
-    # Output ####
+
+    # Output ----
     output$profile <- renderPlot(
       {
-        if (inherits(Profile(), what = "CommunityProfile"))
-          autoplot(Profile()) +
+        if (inherits(profile_reactive(), what = "profile"))
+          autoplot(profile_reactive()) +
           labs(
             title = "Estimated vs Actual Diversity Profile",
             caption = paste(
@@ -295,15 +296,15 @@ server <- function(input, output) {
               input$alpha,
               "risk level).
               The dotted line is the average estimation accross",
-              input$nsimulations,
+              input$n_simulations ,
               "simulations"
               )
             )
         }
       )
     output$rmse <- renderPlot({
-      if (inherits(Profile(), what = "CommunityProfile")) {
-        rmse <- RMSE()
+      if (inherits(profile_reactive(), what = "profile")) {
+        rmse <- rmse_reactive()
         ggplot(rmse) +
           geom_line(aes(x = q, y = RMSE)) +
           labs(
@@ -313,13 +314,13 @@ server <- function(input, output) {
         }
       })
     output$C <- renderPlot({
-      if (inherits(Profile(), what = "CommunityProfile")) {
-        sims_c <- Sims_C()
-        ggplot(sims_c) + 
-          geom_point(aes(x = Actual, y = Estimated)) + 
-          geom_abline(col = "red") + 
-          geom_hline(yintercept = mean(sims_c$Estimated), lty = 2) + 
-          geom_vline(xintercept = mean(sims_c$Actual), lty = 2) +
+      if (inherits(profile_reactive(), what = "profile")) {
+        coverages_compare <- coverages_compare_reactive()
+        ggplot(coverages_compare) +
+          geom_point(aes(x = Actual, y = Estimated)) +
+          geom_abline(col = "red") +
+          geom_hline(yintercept = mean(coverages_compare$Estimated), lty = 2) +
+          geom_vline(xintercept = mean(coverages_compare$Actual), lty = 2) +
           labs(
             title = "Sample Coverage",
             caption = "Estimated vs actual sample coverage of simulated samples.
@@ -329,11 +330,11 @@ server <- function(input, output) {
         }
     })
     output$rac <- renderPlot({
-      if (inherits(Profile(), what = "CommunityProfile")) {
-        autoplot(RAC(), Distribution = input$distribution) +
+      if (inherits(profile_reactive(), what = "profile")) {
+        autoplot(rac_reactive(), Distribution = input$distribution) +
           labs(
             title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
-            caption = "Species are ranked from the most abundant to the rarest. 
+            caption = "Species are ranked from the most abundant to the rarest.
             The abundance axis is in log-scale.
             The red curve is the best fit of the theoretical distribution."
             )
@@ -341,28 +342,37 @@ server <- function(input, output) {
     })
 }
 
-# Prepare the application ####
+# Prepare the application ----
 
 # Does the app run locally?
 is_local <- (Sys.getenv('SHINY_PORT') == "")
 
-# Install necessary packages ####
-InstallPackages <- function(Packages) {
-  sapply(Packages, function(Package)
-    if (!Package %in% installed.packages()[, 1]) {
-      install.packages(Package)
-    })
+# Install necessary packages ----
+install_packages <- function(packages) {
+  invisible(
+    sapply(
+      packages,
+      FUN = function(package) {
+        if (!package %in% installed.packages()[, 1]) {
+          install.packages(
+            package,
+            repos = "https://cran.rstudio.com/",
+            quiet = TRUE
+          )
+        }
+      }
+    )
+  )
 }
 
 # Necessary packages (not run on shyniapps.io)
 if (is_local)
-  InstallPackages(c("shiny", "tidyverse", "entropart", "parallel"))
+  install_packages(c("shiny", "tidyverse", "divent", "parallel"))
 
 # Load packages
 library("shiny")
 library("tidyverse")
-library("entropart")
+library("divent")
 
-
-# Run the application ####
+# Run the application ----
 shinyApp(ui = ui, server = server)
