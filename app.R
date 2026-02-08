@@ -46,7 +46,7 @@ ui <- fluidPage(
         )
       ),
       sliderInput(
-        inputId = "species_number",
+        inputId = "n_species",
         label = "Number of Species in the Community",
         min = 2,
         max = 1000,
@@ -115,7 +115,7 @@ ui <- fluidPage(
           h2("Generate a community"),
           p(
             "Choose the distribution and its parameters, including the number of species.",
-            "A community of the largest size allowed by R is created (only one billion individuals for the broken-stick distribution)."
+            "A community of the largest size allowed by R is created, except for log-series whose size depends on Fisher's alpha and the number of species."
             ),
           p(
             "Its Rank-Abundance Curve, aka a Whittaker plot, is displayed in the RAC tab of the app."
@@ -176,13 +176,19 @@ server <- function(input, output) {
         the_size <- .Machine$integer.max %/% 2
       }
       if (input$distribution %in% c("lseries")) {
-        the_size <- .Machine$integer.max %/% 2^6
+        # Size depends on Fisher's alpha and richness
+        the_size <- round(
+          exp(
+            (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
+              input$fisher_alpha
+          ) - input$fisher_alpha
+        )
       }
       # Draw a very large community
       the_community <- rcommunity(
         n = 1,
         size = the_size,
-        species_number = input$species_number,
+        species_number = input$n_species,
         distribution = input$distribution,
         sd_lnorm = input$sd_lnorm,
         prob_geom = input$prob_geom,
