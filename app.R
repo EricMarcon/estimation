@@ -59,9 +59,11 @@ ui <- fluidPage(
           "Chao-Jost" = "ChaoJost",
           "Chao-Shen" = "ChaoShen",
           "Generalized Coverage" = "GenCov",
+          "Naive" = "naive",
           "Unveiled Chao1" = "UnveilC",
           "Unveiled Improved Chao1" = "UnveiliC",
-          "Unveiled Jackknife" = "UnveilJ"
+          "Unveiled Jackknife" = "UnveilJ",
+          "Zhang-Grabchak" = "ZhangGrabchak"
         ),
         selected = "UnveilJ"
       ),
@@ -158,7 +160,7 @@ server <- function(input, output) {
   the_community.rV <- reactiveVal()
   the_profile.rV <- reactiveVal()
   rmse.rV <- reactiveVal()
-  coverage.rV <- reactiveVal()
+  c_compare <- reactiveVal()
   # Fixed parameter: orders of diversity for the profile
   orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
 
@@ -194,81 +196,86 @@ server <- function(input, output) {
       # Compute the profile
       withProgress(
         {
-          # Estimated profile
-          the_diversity <- vapply(
-            orders,
-            function(q) {
-              div_hill(
-                prob,
-                q = q,
-                as_numeric = TRUE,
-                check_arguments = FALSE
-              )
-            },
-            FUN.VALUE = 0
+          # Diversity profile of the whole community
+          the_diversity <- profile_hill(
+            prob,
+            orders = orders,
+            as_numeric = TRUE
           )
 
-          # Create a MetaCommunity made of simulated communities
+          # Create a metacommunity made of simulated communities
           the_metacommunity <- rcommunity(
-            n = input$n_simulations ,
+            n = input$n_simulations,
             size = input$sample_size,
             prob = prob,
             check_arguments = FALSE
           )
+          # Store it in a matrix
+          the_communities <- as.matrix(the_metacommunity)
 
           # Sample coverage of simulated communities: real and estimated
-          coverages_real <- apply(
-            as.matrix(the_metacommunity),
+          c_real <- apply(
+            the_communities,
             MARGIN = 1,
-            function(community)
+            FUN = function(community) {
               sum(prob[community > 0])
-            )
-          coverages_estimated <- coverage(
+            }
+          )
+          c_estimated <- coverage(
             the_metacommunity,
             as_numeric = TRUE,
             check_arguments = FALSE
           )
-          coverages_compare <- tibble(
-            Actual = coverages_real,
-            Estimated = coverages_estimated
-            )
+          c_compare <- tibble(
+            Actual = c_real,
+            Estimated = c_estimated
+          )
           # Save the values
-          coverage.rV(coverages_compare)
+          c_compare(c_compare)
 
-          the_metacommunity |>
-            profile_hill(orders = orders) |>
-            pivot_wider(
-              names_from = site,
-              values_from = diversity
-            ) |>
-            select(-estimator, -order) ->
-            the_metacommunity_hill
+          # Prepare a matrix for profiles of simulated communities
+          profile.matrix <- matrix(
+            nrow = input$n_simulations,
+            ncol = length(orders)
+          )
 
-          the_metacommunity_hill_mean <- rowMeans(the_metacommunity_hill)
-          the_metacommunity_hill_var <- apply(
-            the_metacommunity_hill,
-            MARGIN = 1,
+          # Run the simulations separately to have a progress bar
+          # Do profile_hill(the_metacommunity) equivalent
+          for (i in seq_len(input$n_simulations)) {
+            profile.matrix[i, ] <- profile_hill(
+              the_communities[i, ],
+              orders = orders,
+              estimator = input$estimator,
+              as_numeric = TRUE,
+              check_arguments = FALSE
+            )
+            setProgress(i)
+          }
+
+          profile_mean <- colMeans(profile.matrix)
+          profile_var <- apply(
+            profile.matrix,
+            MARGIN = 2,
             FUN = var
           )
-          # Quantiles of simulations for each q
-          the_metacommunity_hill_envelope <- apply(
-            the_metacommunity_hill,
-            MARGIN = 1,
+          # Quantiles of simulations for each order
+          profile_envelope <- apply(
+            profile.matrix,
+            MARGIN = 2,
             FUN = stats::quantile,
             probs = c(input$alpha / 2, 1 - input$alpha / 2)
             )
-          colnames(the_metacommunity_hill_envelope) <- orders
 
           # Make a profile object to plot it
           the_profile <- tibble(
             site = "simulations",
             order = orders,
             diversity = the_diversity,
-            inf = the_metacommunity_hill_envelope[1, ],
-            sup = the_metacommunity_hill_envelope[2, ],
+            inf = profile_envelope[1, ],
+            sup = profile_envelope[2, ],
             # Extra fields
-            mean = the_metacommunity_hill_mean,
-            var = the_metacommunity_hill_var
+            mean = profile_mean,
+            var = profile_var
           )
           class(the_profile) <- c(
             "profile",
@@ -284,7 +291,7 @@ server <- function(input, output) {
       # Calculate RMSE
       rmse <- tibble(
         q = orders,
-        RMSE = sqrt((the_profile$diversity - the_profile$mean) ^ 2 +
+        RMSE = sqrt((the_profile$mean - the_profile$diversity) ^ 2 +
           the_profile$var) / the_profile$diversity
       )
       rmse.rV(rmse)
@@ -294,16 +301,19 @@ server <- function(input, output) {
     output$div_profile <- renderPlot({
       if (inherits(the_profile.rV(), what = "profile")) {
         autoplot(the_profile.rV()) +
+          theme(legend.position = "none") +
+          geom_line(aes(y = mean), color = "black", lty = 2) +
           labs(
             title = "Estimated vs Actual Diversity Profile",
-            caption = paste(
-              "Actual diversity profile of the comunity (solid line)",
-              "and estimated diversity (confidence envelope at the",
-              input$alpha,
-              "risk level).",
-              "The dotted line is the average estimation across",
-              input$n_simulations,
-              "simulations"
+            caption = stringr::str_wrap(
+              paste(
+                "Actual diversity profile of the comunity (red line).",
+                "The dotted line is the average estimation across",
+                input$n_simulations,
+                "simulations with its confidence envelope at the",
+                input$alpha,
+                "risk level)."
+              )
             )
           )
       }
@@ -315,14 +325,16 @@ server <- function(input, output) {
           geom_line(aes(x = q, y = RMSE)) +
           labs(
             title = "Normalized Root-Mean-Square Deviation",
-            caption = "RMSE normalized by the average value
-            (across simulations) of the estimator."
+            caption = stringr::str_wrap(
+              "RMSE normalized by the average value
+              (across simulations) of the estimator."
+            )
           )
       }
     })
     output$coverage <- renderPlot({
       if (inherits(the_profile.rV(), what = "profile")) {
-        coverages_compare <- coverage.rV()
+        coverages_compare <- c_compare()
         ggplot(coverages_compare) +
           geom_point(aes(x = Actual, y = Estimated)) +
           geom_abline(col = "red") +
@@ -330,9 +342,11 @@ server <- function(input, output) {
           geom_vline(xintercept = mean(coverages_compare$Actual), lty = 2) +
           labs(
             title = "Sample Coverage",
-            caption = "Estimated vs actual sample coverage of simulated samples.
-            The red line represents equality.
-            The dotted lines show the average estimated and actual values."
+            caption = stringr::str_wrap(
+              "Estimated vs actual sample coverage of simulated samples.
+              The red line represents equality.
+              The dotted lines show the average estimated and actual values."
+            )
           )
       }
     })
@@ -341,9 +355,11 @@ server <- function(input, output) {
         autoplot(the_community.rV(), Distribution = input$distribution) +
           labs(
             title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
-            caption = "Species are ranked from the most abundant to the rarest.
-            The abundance axis is in log-scale.
-            The red curve is the best fit of the theoretical distribution."
+            caption = stringr::str_wrap(
+              "Species are ranked from the most abundant to the rarest.
+              The abundance axis is in log-scale.
+              The red curve is the best fit of the theoretical distribution."
+            )
           )
       }
     })
@@ -371,7 +387,7 @@ install_packages <- function(packages) {
 # Necessary packages (not run on shyniapps.io)
 if (is_local) {
   install_packages(
-    c("shiny", "tibble", "dplyr", "tidyr", "ggplot2", "divent", "parallel")
+    c("shiny", "tibble", "ggplot2", "divent")
   )
 }
 
@@ -379,8 +395,6 @@ if (is_local) {
 # Load packages
 library("shiny")
 library("tibble")
-library("dplyr")
-library("tidyr")
 library("ggplot2")
 library("divent")
 
