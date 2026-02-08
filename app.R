@@ -94,9 +94,9 @@ ui <- fluidPage(
     ## Main panel ----
     mainPanel(
       tabsetPanel(
-        tabPanel(title = "Diversity", plotOutput("profile")),
+        tabPanel(title = "Diversity", plotOutput("div_profile")),
         tabPanel(title = "RMSE", plotOutput("rmse")),
-        tabPanel(title = "Coverage", plotOutput("C")),
+        tabPanel(title = "Coverage", plotOutput("coverage")),
         tabPanel(title = "RAC", plotOutput("rac")),
         tabPanel(
           title = "Help",
@@ -156,9 +156,11 @@ ui <- fluidPage(
 server <- function(input, output) {
   ## Store the reactive values ----
   the_community.rV <- reactiveVal()
-  profile_reactive <- reactiveVal()
-  rmse_reactive <- reactiveVal()
-  coverages_compare_reactive <- reactiveVal()
+  the_profile.rV <- reactiveVal()
+  rmse.rV <- reactiveVal()
+  coverage.rV <- reactiveVal()
+  # Fixed parameter: orders of diversity for the profile
+  orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
 
   ## Action launched by the button ----
   observeEvent(
@@ -174,6 +176,7 @@ server <- function(input, output) {
       if (input$distribution %in% c("lseries")) {
         the_size <- .Machine$integer.max %/% 2^6
       }
+      # Draw a very large community
       the_community <- rcommunity(
         n = 1,
         size = the_size,
@@ -185,140 +188,141 @@ server <- function(input, output) {
         check_arguments = FALSE
       )
       the_community.rV(the_community)
+      # Store the probabilites of species
       prob <- as.numeric(as_probabilities(the_community))
-      # Real profile
-      orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
-      alpha <- input$alpha
 
       # Compute the profile
-      withProgress({
-        # Estimated profile
-        the_diversity <- vapply(
-          orders,
-          function(q) {
-            div_hill(
-              prob,
-              q = q,
-              as_numeric = TRUE,
-              check_arguments = FALSE
+      withProgress(
+        {
+          # Estimated profile
+          the_diversity <- vapply(
+            orders,
+            function(q) {
+              div_hill(
+                prob,
+                q = q,
+                as_numeric = TRUE,
+                check_arguments = FALSE
+              )
+            },
+            FUN.VALUE = 0
+          )
+
+          # Create a MetaCommunity made of simulated communities
+          the_metacommunity <- rcommunity(
+            n = input$n_simulations ,
+            size = input$sample_size,
+            prob = prob,
+            check_arguments = FALSE
+          )
+
+          # Sample coverage of simulated communities: real and estimated
+          coverages_real <- apply(
+            as.matrix(the_metacommunity),
+            MARGIN = 1,
+            function(community)
+              sum(prob[community > 0])
             )
-          },
-          FUN.VALUE = 0
-        )
-
-        # Create a MetaCommunity made of simulated communities
-        the_metacommunity <- rcommunity(
-          n = input$n_simulations ,
-          size = input$sample_size,
-          prob = prob,
-          check_arguments = FALSE
-        )
-
-        # Sample coverage of simulated communities: real and estimated
-        coverages_real <- apply(
-          as.matrix(the_metacommunity),
-          MARGIN = 1,
-          function(community)
-            sum(prob[community > 0])
+          coverages_estimated <- coverage(
+            the_metacommunity,
+            as_numeric = TRUE,
+            check_arguments = FALSE
           )
-        coverages_estimated <- coverage(
-          the_metacommunity,
-          as_numeric = TRUE,
-          check_arguments = FALSE
-        )
-        coverages_compare <- tibble(
-          Actual = coverages_real,
-          Estimated = coverages_estimated
+          coverages_compare <- tibble(
+            Actual = coverages_real,
+            Estimated = coverages_estimated
+            )
+          # Save the values
+          coverage.rV(coverages_compare)
+
+          the_metacommunity |>
+            profile_hill(orders = orders) |>
+            pivot_wider(
+              names_from = site,
+              values_from = diversity
+            ) |>
+            select(-estimator, -order) ->
+            the_metacommunity_hill
+
+          the_metacommunity_hill_mean <- rowMeans(the_metacommunity_hill)
+          the_metacommunity_hill_var <- apply(
+            the_metacommunity_hill,
+            MARGIN = 1,
+            FUN = var
           )
-        # Save the values
-        coverages_compare_reactive(coverages_compare)
+          # Quantiles of simulations for each q
+          the_metacommunity_hill_envelope <- apply(
+            the_metacommunity_hill,
+            MARGIN = 1,
+            FUN = stats::quantile,
+            probs = c(input$alpha / 2, 1 - input$alpha / 2)
+            )
+          colnames(the_metacommunity_hill_envelope) <- orders
 
-        the_metacommunity |>
-          profile_hill(orders = orders) |>
-          pivot_wider(
-            names_from = site,
-            values_from = diversity
-          ) |>
-          select(-estimator, -order) ->
-          the_metacommunity_hill
-
-        the_metacommunity_hill_mean <- rowMeans(the_metacommunity_hill)
-        the_metacommunity_hill_var <- apply(
-          the_metacommunity_hill,
-          MARGIN = 1,
-          FUN = var
-        )
-        # Quantiles of simulations for each q
-        the_metacommunity_hill_envelope <- apply(
-          the_metacommunity_hill,
-          MARGIN = 1,
-          FUN = stats::quantile,
-          probs = c(alpha / 2, 1 - alpha / 2)
+          # Make a profile object to plot it
+          the_profile <- tibble(
+            site = "simulations",
+            order = orders,
+            diversity = the_diversity,
+            inf = the_metacommunity_hill_envelope[1, ],
+            sup = the_metacommunity_hill_envelope[2, ],
+            # Extra fields
+            mean = the_metacommunity_hill_mean,
+            var = the_metacommunity_hill_var
           )
-        colnames(the_metacommunity_hill_envelope) <- orders
-
-        # Make a profile object to plot it
-        the_profile <- tibble(
-          site = "simulations",
-          order = orders,
-          diversity = the_diversity,
-          inf = the_metacommunity_hill_envelope[1, ],
-          sup = the_metacommunity_hill_envelope[2, ],
-          # Extra fields
-          mean = the_metacommunity_hill_mean,
-          var = the_metacommunity_hill_var
-        )
-        class(the_profile) <- c(
-          "profile",
-          class(the_profile)
-        )
-      },
-      min = 0,
-      max = input$n_simulations,
-      message = "Running Simulations"
+          class(the_profile) <- c(
+            "profile",
+            class(the_profile)
+          )
+        },
+        min = 0,
+        max = input$n_simulations,
+        message = "Running Simulations"
       )
       # Save the profile
-      profile_reactive(the_profile)
+      the_profile.rV(the_profile)
       # Calculate RMSE
       rmse <- tibble(
         q = orders,
-        RMSE = sqrt((the_profile$diversity - the_profile$mean) ^ 2 + the_profile$var) / the_profile$diversity
+        RMSE = sqrt((the_profile$diversity - the_profile$mean) ^ 2 +
+          the_profile$var) / the_profile$diversity
       )
-      rmse_reactive(rmse)
+      rmse.rV(rmse)
     })
 
     # Output ----
-    output$profile <- renderPlot(
-      {
-        if (inherits(profile_reactive(), what = "profile"))
-          autoplot(profile_reactive()) +
+    output$div_profile <- renderPlot({
+      if (inherits(the_profile.rV(), what = "profile")) {
+        autoplot(the_profile.rV()) +
           labs(
             title = "Estimated vs Actual Diversity Profile",
             caption = paste(
-              "Actual diversity profile of the comunity (solid line) and estimated diversity (confidence envelope at the",
+              "Actual diversity profile of the comunity (solid line)",
+              "and estimated diversity (confidence envelope at the",
               input$alpha,
-              "risk level).
-              The dotted line is the average estimation accross",
-              input$n_simulations ,
+              "risk level).",
+              "The dotted line is the average estimation across",
+              input$n_simulations,
               "simulations"
-              )
             )
-        }
-      )
+          )
+      }
+    })
     output$rmse <- renderPlot({
-      if (inherits(profile_reactive(), what = "profile")) {
-        rmse <- rmse_reactive()
+      if (inherits(the_profile.rV(), what = "profile")) {
+        rmse <- rmse.rV()
         ggplot(rmse) +
           geom_line(aes(x = q, y = RMSE)) +
           labs(
             title = "Normalized Root-Mean-Square Deviation",
-                 caption = "RMSE normalized by the average value (accross simulations) of the estimator."
-            )
-        }
-      })
-    output$C <- renderPlot({
-      if (inherits(profile_reactive(), what = "profile")) {
-        coverages_compare <- coverages_compare_reactive()
+            caption = "RMSE normalized by the average value
+            (across simulations) of the estimator."
+          )
+      }
+    })
+    output$coverage <- renderPlot({
+      if (inherits(the_profile.rV(), what = "profile")) {
+        coverages_compare <- coverage.rV()
         ggplot(coverages_compare) +
           geom_point(aes(x = Actual, y = Estimated)) +
           geom_abline(col = "red") +
@@ -330,18 +334,18 @@ server <- function(input, output) {
             The red line represents equality.
             The dotted lines show the average estimated and actual values."
           )
-        }
+      }
     })
     output$rac <- renderPlot({
-      if (inherits(profile_reactive(), what = "profile")) {
+      if (inherits(the_profile.rV(), what = "profile")) {
         autoplot(the_community.rV(), Distribution = input$distribution) +
           labs(
             title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
             caption = "Species are ranked from the most abundant to the rarest.
             The abundance axis is in log-scale.
             The red curve is the best fit of the theoretical distribution."
-            )
-        }
+          )
+      }
     })
 }
 
@@ -353,21 +357,31 @@ is_local <- (Sys.getenv('SHINY_PORT') == "")
 ## Install necessary packages ----
 install_packages <- function(packages) {
   packages |>
+    # Which packages are not installed yet?
     setdiff(installed.packages()[, 1]) |>
+    # Install them
     install.packages(
       repos = "https://cran.rstudio.com/",
       quiet = TRUE
     ) |>
+    # Hide the result
     invisible()
 }
 
 # Necessary packages (not run on shyniapps.io)
-if (is_local)
-  install_packages(c("shiny", "tidyverse", "divent", "parallel"))
+if (is_local) {
+  install_packages(
+    c("shiny", "tibble", "dplyr", "tidyr", "ggplot2", "divent", "parallel")
+  )
+}
+
 
 # Load packages
 library("shiny")
-library("tidyverse")
+library("tibble")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
 library("divent")
 
 # Run the application ----
