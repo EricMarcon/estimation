@@ -155,7 +155,7 @@ ui <- fluidPage(
 # Server logic ----
 server <- function(input, output) {
   ## Store the reactive values ----
-  rac_reactive <- reactiveVal()
+  the_community.rV <- reactiveVal()
   profile_reactive <- reactiveVal()
   rmse_reactive <- reactiveVal()
   coverages_compare_reactive <- reactiveVal()
@@ -165,12 +165,15 @@ server <- function(input, output) {
     eventExpr = input$run,
     handlerExpr = {
       # Create the community
-      if (input$distribution %in% c("lnorm", "geom"))
+      if (input$distribution %in% c("lnorm", "geom")) {
         the_size <- .Machine$integer.max
-      if (input$distribution %in% c("bstick"))
+      }
+      if (input$distribution %in% c("bstick")) {
         the_size <- .Machine$integer.max %/% 2
-      if (input$distribution %in% c("lseries"))
+      }
+      if (input$distribution %in% c("lseries")) {
         the_size <- .Machine$integer.max %/% 2^6
+      }
       the_community <- rcommunity(
         n = 1,
         size = the_size,
@@ -180,8 +183,8 @@ server <- function(input, output) {
         prob_geom = input$prob_geom,
         fisher_alpha = input$fisher_alpha,
         check_arguments = FALSE
-        )
-      rac_reactive(the_community)
+      )
+      the_community.rV(the_community)
       prob <- as.numeric(as_probabilities(the_community))
       # Real profile
       orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
@@ -331,7 +334,7 @@ server <- function(input, output) {
     })
     output$rac <- renderPlot({
       if (inherits(profile_reactive(), what = "profile")) {
-        autoplot(rac_reactive(), Distribution = input$distribution) +
+        autoplot(the_community.rV(), Distribution = input$distribution) +
           labs(
             title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
             caption = "Species are ranked from the most abundant to the rarest.
@@ -344,25 +347,18 @@ server <- function(input, output) {
 
 # Prepare the application ----
 
-# Does the app run locally?
+## Does the app run locally? ----
 is_local <- (Sys.getenv('SHINY_PORT') == "")
 
-# Install necessary packages ----
+## Install necessary packages ----
 install_packages <- function(packages) {
-  invisible(
-    sapply(
-      packages,
-      FUN = function(package) {
-        if (!package %in% installed.packages()[, 1]) {
-          install.packages(
-            package,
-            repos = "https://cran.rstudio.com/",
-            quiet = TRUE
-          )
-        }
-      }
-    )
-  )
+  packages |>
+    setdiff(installed.packages()[, 1]) |>
+    install.packages(
+      repos = "https://cran.rstudio.com/",
+      quiet = TRUE
+    ) |>
+    invisible()
 }
 
 # Necessary packages (not run on shyniapps.io)
