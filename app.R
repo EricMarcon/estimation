@@ -172,7 +172,7 @@ server <- function(input, output) {
   the_community.rV <- reactiveVal()
   the_profile.rV <- reactiveVal()
   rmse.rV <- reactiveVal()
-  c_compare <- reactiveVal()
+  c_compare.rV <- reactiveVal()
   # Fixed parameter: orders of diversity for the profile
   orders <- c(seq(0, .1, 0.025), .2, seq(.3, 2, 0.1))
 
@@ -249,7 +249,7 @@ server <- function(input, output) {
             Estimated = c_estimated
           )
           # Save the values
-          c_compare(c_compare)
+          c_compare.rV(c_compare)
 
           # Prepare a matrix for profiles of simulated communities
           profile.matrix <- matrix(
@@ -352,7 +352,7 @@ server <- function(input, output) {
     })
     output$coverage <- renderPlot({
       if (inherits(the_profile.rV(), what = "profile")) {
-        coverages_compare <- c_compare()
+        coverages_compare <- c_compare.rV()
         ggplot(coverages_compare) +
           geom_point(aes(x = Actual, y = Estimated)) +
           geom_abline(col = "red") +
