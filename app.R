@@ -121,8 +121,8 @@ ui <- fluidPage(
           p(
             "Choose the distribution and its parameters,",
             "including the number of species.",
-            "A community of the largest size allowed by R is created,",
-            "except for log-series whose size depends on Fisher's alpha",
+            "A community of the largest size allowed by R as an integer value",
+            "is created, except for log-series whose size depends on Fisher's alpha",
             "and the number of species."
           ),
           p(
@@ -158,13 +158,23 @@ ui <- fluidPage(
               src = "divent.png",
               title = "Made with the divent package",
               style = "display: block; margin-left: auto; margin-right: auto;"
-              )
             )
           )
         )
       )
     )
   )
+)
+
+## Modal dialog ----
+too_many_species <- modalDialog(
+  "The number of individuals is too large.
+  Reduce the number of species or increase Fisher's alpha.",
+  title = "Too many species",
+  footer = tagList(
+    actionButton("ok", "OK")
+  )
+)
 
 # Server logic ----
 server <- function(input, output) {
@@ -180,6 +190,8 @@ server <- function(input, output) {
   observeEvent(
     eventExpr = input$run,
     handlerExpr = {
+      # Conditions to run are OK but validation will follow
+      ok_to_run <- TRUE
       # Create the community
       if (input$distribution %in% c("lnorm", "geom")) {
         the_size <- .Machine$integer.max
@@ -189,130 +201,140 @@ server <- function(input, output) {
       }
       if (input$distribution %in% c("lseries")) {
         # Size depends on Fisher's alpha and richness
-        the_size <- round(
-          exp(
-            (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
-              input$fisher_alpha
-          ) - input$fisher_alpha
-        )
+        the_size <- exp(
+          (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
+            input$fisher_alpha
+        ) - input$fisher_alpha
+        if (the_size > .Machine$integer.max ) {
+          ok_to_run <- FALSE
+          showModal(too_many_species)
+          observeEvent(
+            eventExpr = input$ok,
+            handlerExpr = removeModal()
+          )
+        } else {
+          the_size <- as.integer(the_size)
+        }
       }
-      # Draw a very large community
-      the_community <- rcommunity(
-        n = 1,
-        size = the_size,
-        species_number = input$n_species,
-        distribution = input$distribution,
-        sd_lnorm = input$sd_lnorm,
-        prob_geom = input$prob_geom,
-        fisher_alpha = input$fisher_alpha,
-        check_arguments = FALSE
-      )
-      the_community.rV(the_community)
-      # Store the probabilites of species
-      prob <- as.numeric(as_probabilities(the_community))
+      if (ok_to_run) {
+        # Draw a very large community
+        the_community <- rcommunity(
+          n = 1,
+          size = the_size,
+          species_number = input$n_species,
+          distribution = input$distribution,
+          sd_lnorm = input$sd_lnorm,
+          prob_geom = input$prob_geom,
+          fisher_alpha = input$fisher_alpha,
+          check_arguments = FALSE
+        )
+        the_community.rV(the_community)
+        # Store the probabilites of species
+        prob <- as.numeric(as_probabilities(the_community))
 
-      # Compute the profile
-      withProgress(
-        {
-          # Diversity profile of the whole community
-          the_diversity <- profile_hill(
-            prob,
-            orders = orders,
-            as_numeric = TRUE
-          )
-
-          # Create a metacommunity made of simulated communities
-          the_metacommunity <- rcommunity(
-            n = input$n_simulations,
-            size = input$sample_size,
-            prob = prob,
-            check_arguments = FALSE
-          )
-          # Store it in a matrix
-          the_communities <- as.matrix(the_metacommunity)
-
-          # Sample coverage of simulated communities: real and estimated
-          c_real <- apply(
-            the_communities,
-            MARGIN = 1,
-            FUN = function(community) {
-              sum(prob[community > 0])
-            }
-          )
-          c_estimated <- coverage(
-            the_metacommunity,
-            as_numeric = TRUE,
-            check_arguments = FALSE
-          )
-          c_compare <- tibble(
-            Actual = c_real,
-            Estimated = c_estimated
-          )
-          # Save the values
-          c_compare.rV(c_compare)
-
-          # Prepare a matrix for profiles of simulated communities
-          profile.matrix <- matrix(
-            nrow = input$n_simulations,
-            ncol = length(orders)
-          )
-
-          # Run the simulations separately to have a progress bar
-          # Do profile_hill(the_metacommunity) equivalent
-          for (i in seq_len(input$n_simulations)) {
-            profile.matrix[i, ] <- profile_hill(
-              the_communities[i, ],
+        # Compute the profile
+        withProgress(
+          {
+            # Diversity profile of the whole community
+            the_diversity <- profile_hill(
+              prob,
               orders = orders,
-              estimator = input$estimator,
+              as_numeric = TRUE
+            )
+
+            # Create a metacommunity made of simulated communities
+            the_metacommunity <- rcommunity(
+              n = input$n_simulations,
+              size = input$sample_size,
+              prob = prob,
+              check_arguments = FALSE
+            )
+            # Store it in a matrix
+            the_communities <- as.matrix(the_metacommunity)
+
+            # Sample coverage of simulated communities: real and estimated
+            c_real <- apply(
+              the_communities,
+              MARGIN = 1,
+              FUN = function(community) {
+                sum(prob[community > 0])
+              }
+            )
+            c_estimated <- coverage(
+              the_metacommunity,
               as_numeric = TRUE,
               check_arguments = FALSE
             )
-            setProgress(i)
-          }
+            c_compare <- tibble(
+              Actual = c_real,
+              Estimated = c_estimated
+            )
+            # Save the values
+            c_compare.rV(c_compare)
 
-          profile_mean <- colMeans(profile.matrix)
-          profile_var <- apply(
-            profile.matrix,
-            MARGIN = 2,
-            FUN = var
-          )
-          # Quantiles of simulations for each order
-          profile_envelope <- apply(
-            profile.matrix,
-            MARGIN = 2,
-            FUN = stats::quantile,
-            probs = c(input$alpha / 2, 1 - input$alpha / 2)
+            # Prepare a matrix for profiles of simulated communities
+            profile.matrix <- matrix(
+              nrow = input$n_simulations,
+              ncol = length(orders)
             )
 
-          # Make a profile object to plot it
-          the_profile <- tibble(
-            site = "simulations",
-            order = orders,
-            diversity = the_diversity,
-            inf = profile_envelope[1, ],
-            sup = profile_envelope[2, ],
-            # Extra fields
-            mean = profile_mean,
-            var = profile_var
-          )
-          class(the_profile) <- c(
-            "profile",
-            class(the_profile)
-          )
-        },
-        min = 0,
-        max = input$n_simulations,
-        message = "Running Simulations"
-      )
-      # Save the profile
-      the_profile.rV(the_profile)
-      # Calculate RMSE
-      rmse <- tibble(
-        q = orders,
-        RMSE = sqrt((the_profile$mean - the_profile$diversity) ^ 2 +
-          the_profile$var) / the_profile$diversity
-      )
-      rmse.rV(rmse)
+            # Run the simulations separately to have a progress bar
+            # Do profile_hill(the_metacommunity) equivalent
+            for (i in seq_len(input$n_simulations)) {
+              profile.matrix[i, ] <- profile_hill(
+                the_communities[i, ],
+                orders = orders,
+                estimator = input$estimator,
+                as_numeric = TRUE,
+                check_arguments = FALSE
+              )
+              setProgress(i)
+            }
+
+            profile_mean <- colMeans(profile.matrix)
+            profile_var <- apply(
+              profile.matrix,
+              MARGIN = 2,
+              FUN = var
+            )
+            # Quantiles of simulations for each order
+            profile_envelope <- apply(
+              profile.matrix,
+              MARGIN = 2,
+              FUN = stats::quantile,
+              probs = c(input$alpha / 2, 1 - input$alpha / 2)
+              )
+
+            # Make a profile object to plot it
+            the_profile <- tibble(
+              site = "simulations",
+              order = orders,
+              diversity = the_diversity,
+              inf = profile_envelope[1, ],
+              sup = profile_envelope[2, ],
+              # Extra fields
+              mean = profile_mean,
+              var = profile_var
+            )
+            class(the_profile) <- c(
+              "profile",
+              class(the_profile)
+            )
+          },
+          min = 0,
+          max = input$n_simulations,
+          message = "Running Simulations"
+        )
+        # Save the profile
+        the_profile.rV(the_profile)
+        # Calculate RMSE
+        rmse <- tibble(
+          q = orders,
+          RMSE = sqrt((the_profile$mean - the_profile$diversity) ^ 2 +
+            the_profile$var) / the_profile$diversity
+        )
+        rmse.rV(rmse)
+      }
     })
 
     # Output ----
@@ -405,7 +427,7 @@ install_packages <- function(packages) {
 # Necessary packages (not run on shyniapps.io)
 if (is_local) {
   install_packages(
-    c("shiny", "tibble", "ggplot2", "divent")
+    c("shiny", "shinyFeedback", "tibble", "ggplot2", "divent")
   )
 }
 
