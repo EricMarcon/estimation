@@ -427,7 +427,7 @@ install_packages <- function(packages) {
 # Necessary packages (not run on shyniapps.io)
 if (is_local) {
   install_packages(
-    c("shiny", "shinyFeedback", "tibble", "ggplot2", "divent")
+    c("shiny", "tibble", "ggplot2", "divent")
   )
 }
 
