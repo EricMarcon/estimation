@@ -204,8 +204,9 @@ server <- function(input, output) {
         the_size <- exp(
           (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
             input$fisher_alpha
-        ) - input$fisher_alpha
-        if (the_size > .Machine$integer.max ) {
+        ) -
+          input$fisher_alpha
+        if (the_size > .Machine$integer.max) {
           ok_to_run <- FALSE
           showModal(too_many_species)
           observeEvent(
@@ -303,7 +304,7 @@ server <- function(input, output) {
               MARGIN = 2,
               FUN = stats::quantile,
               probs = c(input$alpha / 2, 1 - input$alpha / 2)
-              )
+            )
 
             # Make a profile object to plot it
             the_profile <- tibble(
@@ -330,79 +331,83 @@ server <- function(input, output) {
         # Calculate RMSE
         rmse <- tibble(
           q = orders,
-          RMSE = sqrt((the_profile$mean - the_profile$diversity) ^ 2 +
-            the_profile$var) / the_profile$diversity
+          RMSE = sqrt(
+            (the_profile$mean - the_profile$diversity)^2 +
+              the_profile$var
+          ) /
+            the_profile$diversity
         )
         rmse.rV(rmse)
       }
-    })
+    }
+  )
 
-    # Output ----
-    output$div_profile <- renderPlot({
-      if (inherits(the_profile.rV(), what = "profile")) {
-        autoplot(the_profile.rV()) +
-          theme(legend.position = "none") +
-          geom_line(aes(y = mean), color = "black", lty = 2) +
-          labs(
-            title = "Estimated vs Actual Diversity Profile",
-            caption = stringr::str_wrap(
-              paste(
-                "Actual diversity profile of the comunity (red line).",
-                "The dotted line is the average estimation across",
-                input$n_simulations,
-                "simulations with its confidence envelope at the",
-                input$alpha,
-                "risk level)."
-              )
+  # Output ----
+  output$div_profile <- renderPlot({
+    if (inherits(the_profile.rV(), what = "profile")) {
+      autoplot(the_profile.rV()) +
+        theme(legend.position = "none") +
+        geom_line(aes(y = mean), color = "black", lty = 2) +
+        labs(
+          title = "Estimated vs Actual Diversity Profile",
+          caption = stringr::str_wrap(
+            paste(
+              "Actual diversity profile of the comunity (red line).",
+              "The dotted line is the average estimation across",
+              input$n_simulations,
+              "simulations with its confidence envelope at the",
+              input$alpha,
+              "risk level)."
             )
           )
-      }
-    })
-    output$rmse <- renderPlot({
-      if (inherits(the_profile.rV(), what = "profile")) {
-        rmse <- rmse.rV()
-        ggplot(rmse) +
-          geom_line(aes(x = q, y = RMSE)) +
-          labs(
-            title = "Normalized Root-Mean-Square Deviation",
-            caption = stringr::str_wrap(
-              "RMSE normalized by the average value
+        )
+    }
+  })
+  output$rmse <- renderPlot({
+    if (inherits(the_profile.rV(), what = "profile")) {
+      rmse <- rmse.rV()
+      ggplot(rmse) +
+        geom_line(aes(x = q, y = RMSE)) +
+        labs(
+          title = "Normalized Root-Mean-Square Deviation",
+          caption = stringr::str_wrap(
+            "RMSE normalized by the average value
               (across simulations) of the estimator."
-            )
           )
-      }
-    })
-    output$coverage <- renderPlot({
-      if (inherits(the_profile.rV(), what = "profile")) {
-        coverages_compare <- c_compare.rV()
-        ggplot(coverages_compare) +
-          geom_point(aes(x = Actual, y = Estimated)) +
-          geom_abline(col = "red") +
-          geom_hline(yintercept = mean(coverages_compare$Estimated), lty = 2) +
-          geom_vline(xintercept = mean(coverages_compare$Actual), lty = 2) +
-          labs(
-            title = "Sample Coverage",
-            caption = stringr::str_wrap(
-              "Estimated vs actual sample coverage of simulated samples.
+        )
+    }
+  })
+  output$coverage <- renderPlot({
+    if (inherits(the_profile.rV(), what = "profile")) {
+      coverages_compare <- c_compare.rV()
+      ggplot(coverages_compare) +
+        geom_point(aes(x = Actual, y = Estimated)) +
+        geom_abline(col = "red") +
+        geom_hline(yintercept = mean(coverages_compare$Estimated), lty = 2) +
+        geom_vline(xintercept = mean(coverages_compare$Actual), lty = 2) +
+        labs(
+          title = "Sample Coverage",
+          caption = stringr::str_wrap(
+            "Estimated vs actual sample coverage of simulated samples.
               The red line represents equality.
               The dotted lines show the average estimated and actual values."
-            )
           )
-      }
-    })
-    output$rac <- renderPlot({
-      if (inherits(the_profile.rV(), what = "profile")) {
-        autoplot(the_community.rV(), Distribution = input$distribution) +
-          labs(
-            title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
-            caption = stringr::str_wrap(
-              "Species are ranked from the most abundant to the rarest.
+        )
+    }
+  })
+  output$rac <- renderPlot({
+    if (inherits(the_profile.rV(), what = "profile")) {
+      autoplot(the_community.rV(), Distribution = input$distribution) +
+        labs(
+          title = "Rank-Abundance Curve (Whittaker Plot) of the simulated community.",
+          caption = stringr::str_wrap(
+            "Species are ranked from the most abundant to the rarest.
               The abundance axis is in log-scale.
               The red curve is the best fit of the theoretical distribution."
-            )
           )
-      }
-    })
+        )
+    }
+  })
 }
 
 # Prepare the application ----
