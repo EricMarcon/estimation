@@ -414,7 +414,13 @@ is_local <- (Sys.getenv('SHINY_PORT') == "")
 install_packages <- function(packages) {
   packages |>
     # Which packages are not installed yet?
-    setdiff(installed.packages()[, 1]) |>
+    vapply(
+      FUN = requireNamespace,
+      FUN.VALUE = TRUE,
+      quietly = TRUE
+    ) |>
+    subset(FALSE) |>
+    names() |>
     # Install them
     install.packages(
       repos = "https://cran.rstudio.com/",
