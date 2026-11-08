@@ -240,99 +240,103 @@ server <- function(input, output) {
           )
         )
 
-        # Compute the profile
-        withProgress(
-          {
-            # Diversity profile of the whole community
-            the_diversity <- profile_hill(
-              prob,
+        # Diversity profile of the whole community
+        the_diversity <- profile_hill(
+          prob,
+          orders = orders,
+          as_numeric = TRUE,
+          check_arguments = FALSE
+        )
+
+        # Create a metacommunity made of simulated communities
+        the_metacommunity <- rcommunity(
+          n = input$n_simulations,
+          size = input$sample_size,
+          prob = prob,
+          check_arguments = FALSE
+        )
+        # Store it in a matrix
+        the_communities <- as.matrix(the_metacommunity)
+
+        # Sample coverage of simulated communities: real and estimated
+        c_real <- apply(
+          the_communities,
+          MARGIN = 1,
+          FUN = function(community) {
+            sum(prob[community > 0])
+          }
+        )
+        c_estimated <- coverage(
+          the_metacommunity,
+          as_numeric = TRUE,
+          check_arguments = FALSE
+        )
+        c_compare <- tibble(
+          Actual = c_real,
+          Estimated = c_estimated
+        )
+        # Save the values
+        c_compare.rV(c_compare)
+
+        # Make the inputs accessible by parallel tasks
+        n_simulations <- input$n_simulations
+        estimator <- input$estimator
+
+        withProgressShiny({
+          # Create a progressor
+          progress <- progressor(
+            steps = input$n_simulations
+          )
+
+          # Run the simulations according to the plan
+          profile.matrix <- foreach::foreach(
+            simulation = seq_len(n_simulations),
+            .combine = rbind,
+            .options.future = list(seed = TRUE)
+          ) %dofuture% {
+            profile_simulated <- profile_hill(
+              the_communities[simulation, ],
               orders = orders,
+              estimator = estimator,
               as_numeric = TRUE,
               check_arguments = FALSE
             )
+            # Update the progress bar
+            progress()
+            # Return the matrix
+            profile_simulated
+          }
+        }, message = "Running simulations")
 
-            # Create a metacommunity made of simulated communities
-            the_metacommunity <- rcommunity(
-              n = input$n_simulations,
-              size = input$sample_size,
-              prob = prob,
-              check_arguments = FALSE
-            )
-            # Store it in a matrix
-            the_communities <- as.matrix(the_metacommunity)
+        # Statistics
+        profile_mean <- colMeans(profile.matrix)
+        profile_var <- apply(
+          profile.matrix,
+          MARGIN = 2,
+          FUN = var
+        )
+        # Quantiles of simulations for each order
+        profile_envelope <- apply(
+          profile.matrix,
+          MARGIN = 2,
+          FUN = stats::quantile,
+          probs = c(input$alpha / 2, 1 - input$alpha / 2)
+        )
 
-            # Sample coverage of simulated communities: real and estimated
-            c_real <- apply(
-              the_communities,
-              MARGIN = 1,
-              FUN = function(community) {
-                sum(prob[community > 0])
-              }
-            )
-            c_estimated <- coverage(
-              the_metacommunity,
-              as_numeric = TRUE,
-              check_arguments = FALSE
-            )
-            c_compare <- tibble(
-              Actual = c_real,
-              Estimated = c_estimated
-            )
-            # Save the values
-            c_compare.rV(c_compare)
-
-            # Prepare a matrix for profiles of simulated communities
-            profile.matrix <- matrix(
-              nrow = input$n_simulations,
-              ncol = length(orders)
-            )
-
-            # Run the simulations separately to have a progress bar
-            # Do profile_hill(the_metacommunity) equivalent
-            for (i in seq_len(input$n_simulations)) {
-              profile.matrix[i, ] <- profile_hill(
-                the_communities[i, ],
-                orders = orders,
-                estimator = input$estimator,
-                as_numeric = TRUE,
-                check_arguments = FALSE
-              )
-              setProgress(i)
-            }
-
-            profile_mean <- colMeans(profile.matrix)
-            profile_var <- apply(
-              profile.matrix,
-              MARGIN = 2,
-              FUN = var
-            )
-            # Quantiles of simulations for each order
-            profile_envelope <- apply(
-              profile.matrix,
-              MARGIN = 2,
-              FUN = stats::quantile,
-              probs = c(input$alpha / 2, 1 - input$alpha / 2)
-            )
-
-            # Make a profile object to plot it
-            the_profile <- tibble(
-              site = "simulations",
-              order = orders,
-              diversity = the_diversity,
-              inf = profile_envelope[1, ],
-              sup = profile_envelope[2, ],
-              # Extra fields
-              mean = profile_mean,
-              var = profile_var
-            )
-            class(the_profile) <- c(
-              "profile",
-              class(the_profile)
-            )
-          },
-          min = 0,
-          max = input$n_simulations,
-          message = "Running Simulations"
+        # Make a profile object to plot it
+        the_profile <- tibble(
+          site = "simulations",
+          order = orders,
+          diversity = the_diversity,
+          inf = profile_envelope[1, ],
+          sup = profile_envelope[2, ],
+          # Extra fields
+          mean = profile_mean,
+          var = profile_var
+        )
+        class(the_profile) <- c(
+          "profile",
+          class(the_profile)
         )
         # Save the profile
         the_profile.rV(the_profile)
@@ -446,12 +450,15 @@ install_packages <- function(packages) {
 # Necessary packages (not run on shyniapps.io)
 if (is_local) {
   install_packages(
-    c("shiny", "tibble", "ggplot2", "divent")
+    c("shiny", "foreach", "doFuture", "progressr", "tibble", "ggplot2", "divent")
   )
 }
 
 # Load packages
 library("shiny")
+library("foreach")
+library("doFuture")
+library("progressr")
 library("tibble")
 library("ggplot2")
 library("divent")
