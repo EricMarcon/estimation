@@ -195,26 +195,28 @@ server <- function(input, output) {
       # Create the community
       if (input$distribution %in% c("lnorm", "geom")) {
         the_size <- .Machine$integer.max
-      }
-      if (input$distribution %in% c("bstick")) {
-        the_size <- .Machine$integer.max %/% 2
-      }
-      if (input$distribution %in% c("lseries")) {
-        # Size depends on Fisher's alpha and richness
-        the_size <- exp(
-          (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
-            input$fisher_alpha
-        ) -
-          input$fisher_alpha
-        if (the_size > .Machine$integer.max) {
-          ok_to_run <- FALSE
-          showModal(too_many_species)
-          observeEvent(
-            eventExpr = input$ok,
-            handlerExpr = removeModal()
-          )
+      } else {
+        if (input$distribution == "bstick") {
+          the_size <- .Machine$integer.max %/% 2
         } else {
-          the_size <- as.integer(the_size)
+          if (input$distribution  == "lseries") {
+            # Size depends on Fisher's alpha and richness
+            the_size <- exp(
+              (input$n_species + input$fisher_alpha * log(input$fisher_alpha)) /
+                input$fisher_alpha
+            ) -
+              input$fisher_alpha
+            if (the_size > .Machine$integer.max) {
+              ok_to_run <- FALSE
+              showModal(too_many_species)
+              observeEvent(
+                eventExpr = input$ok,
+                handlerExpr = removeModal()
+              )
+            } else {
+              the_size <- as.integer(the_size)
+            }
+          }
         }
       }
       if (ok_to_run) {
@@ -230,8 +232,13 @@ server <- function(input, output) {
           check_arguments = FALSE
         )
         the_community.rV(the_community)
-        # Store the probabilites of species
-        prob <- as.numeric(as_probabilities(the_community))
+        # Store the probabilities of species
+        prob <- as.numeric(
+          as_probabilities(
+            the_community,
+            check_arguments = FALSE
+          )
+        )
 
         # Compute the profile
         withProgress(
@@ -240,7 +247,8 @@ server <- function(input, output) {
             the_diversity <- profile_hill(
               prob,
               orders = orders,
-              as_numeric = TRUE
+              as_numeric = TRUE,
+              check_arguments = FALSE
             )
 
             # Create a metacommunity made of simulated communities
@@ -441,7 +449,6 @@ if (is_local) {
     c("shiny", "tibble", "ggplot2", "divent")
   )
 }
-
 
 # Load packages
 library("shiny")
