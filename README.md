@@ -4,9 +4,9 @@ A shiny application to assess the efficiency of diversity estimators applied to 
 
 The theory is detailed in the paper [*Practical Estimation of Diversity from Abundance Data*](https://hal-agroparistech.archives-ouvertes.fr/hal-01212435).
 
-
-
 ![Estimation Shiny app](capture.png)
+
+## Quick start
 
 Run `app.R` and choose:
 
@@ -24,7 +24,25 @@ The output plots are:
 - The root mean squared error of the estimation.
 
 Run it directly from GitHub:
+
 ```
 library("shiny")
 runGitHub("EricMarcon/estimation")
+```
+
+## Parallel computing
+
+Running hundreds of simulations is encouraged by computer intensive.
+The app supports their parallel computation with the [Futureverse](https://www.futureverse.org/).
+Before running the app, set your plan.
+To use all cores but one of your computer's CPU, run:
+
+```
+library("future")
+plan(multisession, workers = availableCores(omit = 1))
+```
+
+After use, release the resources by running:
+```
+plan(sequential)
 ```
